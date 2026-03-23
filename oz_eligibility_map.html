@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="X-Frame-Options" content="ALLOWALL"/>
+  <title>OZ Eligibility Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'Segoe UI', Arial, sans-serif; background: #f5f3ee; overflow: hidden; }
+    #app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── Header ── */
+    #header {
+      background: #f8f6f1;
+      padding: 9px 16px;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      border-bottom: 2px solid #d4c9b0;
+      flex-shrink: 0;
+      z-index: 1000;
+    }
+    #header-text h1 { font-size: 0.95rem; font-weight: 700; color: #7b4f12; }
+    #header-text p  { font-size: 0.7rem; color: #666; margin-top: 1px; }
+
+    /* ── State selector ── */
+    #controls { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+    #controls label { font-size: 0.78rem; color: #555; font-weight: 600; }
+    #state-select {
+      padding: 5px 10px;
+      border: 2px solid #b8a98a;
+      border-radius: 6px;
+      background: #fff;
+      color: #333;
+      font-size: 0.8rem;
+      cursor: pointer;
+      outline: none;
+      min-width: 160px;
+    }
+    #state-select:focus { border-color: #7b4f12; }
+
+    /* ── Category filter pills ── */
+    #cat-filters { display: flex; gap: 5px; flex-wrap: wrap; }
+    .cat-pill {
+      padding: 4px 11px;
+      border-radius: 20px;
+      border: 2px solid transparent;
+      font-size: 0.72rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+      user-select: none;
+    }
+    .cat-pill.off { opacity: 0.3; }
+    .cat-pill:hover { transform: scale(1.05); }
+
+    /* ── Map ── */
+    #map { flex: 1; }
+    #loader {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,253,248,0.95);
+      padding: 18px 28px;
+      border-radius: 10px;
+      border: 1px solid #c8b89a;
+      font-size: 0.85rem;
+      color: #555;
+      z-index: 2000;
+      display: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    }
+    #loader.show { display: block; }
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #c8b89a;
+      border-top-color: #7b4f12;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Legend ── */
+    #legend {
+      position: absolute;
+      bottom: 28px; right: 10px;
+      background: rgba(255,253,248,0.96);
+      padding: 12px 16px;
+      border-radius: 8px;
+      z-index: 1000;
+      font-size: 0.76rem;
+      border: 1px solid #c8b89a;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      min-width: 190px;
+    }
+    #legend h4 { font-size: 0.78rem; color: #7b4f12; margin-bottom: 9px; font-weight: 700; }
+    .leg-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .leg-swatch { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.1); }
+    .leg-label { color: #333; }
+    .leg-count { margin-left: auto; color: #888; font-size: 0.7rem; font-weight: 600; }
+
+    /* ── Stats panel ── */
+    #stats {
+      position: absolute;
+      bottom: 28px; left: 10px;
+      background: rgba(255,253,248,0.96);
+      padding: 11px 15px;
+      border-radius: 8px;
+      z-index: 1000;
+      font-size: 0.75rem;
+      border: 1px solid #c8b89a;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      min-width: 200px;
+      display: none;
+    }
+    #stats.show { display: block; }
+    #stats h4 { font-size: 0.78rem; color: #7b4f12; margin-bottom: 8px; font-weight: 700; }
+    .stat-row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #e8dfc8; }
+    .stat-row:last-child { border: none; }
+    .stat-lbl { color: #666; }
+    .stat-val { font-weight: 700; color: #333; }
+
+    /* ── Hover info ── */
+    #info {
+      position: absolute;
+      bottom: 28px; left: 10px;
+      background: rgba(255,253,248,0.96);
+      padding: 10px 14px;
+      border-radius: 8px;
+      z-index: 1000;
+      width: 230px;
+      font-size: 0.75rem;
+      border: 1px solid #c8b89a;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    #info.show { opacity: 1; }
+    #info h4 { font-size: 0.79rem; color: #7b4f12; margin-bottom: 7px; font-weight: 700; }
+    .irow { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #e8dfc8; }
+    .irow:last-child { border: none; }
+    .ilbl { color: #777; }
+    .ival { font-weight: 600; color: #222; }
+    .ival.eligible   { color: #166534; }
+    .ival.ineligible { color: #1d4ed8; }
+    .ival.insuff     { color: #92400e; }
+
+    /* ── Popup ── */
+    .leaflet-popup-content-wrapper {
+      background: rgba(255,253,248,0.98) !important;
+      color: #222 !important;
+      border: 1px solid #c8b89a !important;
+      border-radius: 8px !important;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15) !important;
+    }
+    .leaflet-popup-tip-container { display: none; }
+    .leaflet-popup-content { margin: 12px 14px !important; font-size: 0.8rem; }
+    .pu-title { font-weight: 700; color: #7b4f12; margin-bottom: 8px; }
+    .pu-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .pu-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
+    .pu-lbl { color: #777; white-space: nowrap; }
+    .pu-val { font-weight: 600; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <div id="header-text">
+      <h1>Opportunity Zone Eligibility — Census Tract Map</h1>
+      <p>Source: 2020–2024 ACS &bull; 85,184 tracts nationally &bull; Hover to explore, click for detail &bull; Select a state to begin</p>
+    </div>
+    <div id="controls">
+      <div id="cat-filters"></div>
+      <label for="state-select">State / Territory:</label>
+      <select id="state-select">
+        <option value="">— Select a state —</option>
+      </select>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<div id="loader"><span class="spinner"></span><span id="loader-text">Loading tracts…</span></div>
+
+<div id="legend">
+  <h4>OZ Eligibility Status</h4>
+  <div class="leg-row"><div class="leg-swatch" style="background:#16803c"></div><span class="leg-label">OZ Eligible</span><span class="leg-count" id="cnt-eligible">—</span></div>
+  <div class="leg-row"><div class="leg-swatch" style="background:#3b82f6"></div><span class="leg-label">OZ Ineligible</span><span class="leg-count" id="cnt-ineligible">—</span></div>
+  <div class="leg-row"><div class="leg-swatch" style="background:#f59e0b"></div><span class="leg-label">Insufficient Information</span><span class="leg-count" id="cnt-insuff">—</span></div>
+</div>
+
+<div id="stats">
+  <h4 id="stats-title">State Summary</h4>
+  <div class="stat-row"><span class="stat-lbl">OZ Eligible</span><span class="stat-val" id="s-eligible">—</span></div>
+  <div class="stat-row"><span class="stat-lbl">OZ Ineligible</span><span class="stat-val" id="s-ineligible">—</span></div>
+  <div class="stat-row"><span class="stat-lbl">Insufficient Info</span><span class="stat-val" id="s-insuff">—</span></div>
+  <div class="stat-row"><span class="stat-lbl">Total Tracts</span><span class="stat-val" id="s-total">—</span></div>
+  <div class="stat-row"><span class="stat-lbl">Eligible Share</span><span class="stat-val" id="s-pct">—</span></div>
+</div>
+
+<div id="info">
+  <h4 id="info-title">Tract Info</h4>
+  <div id="info-body"></div>
+</div>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+const SERVICE_URL = 'https://services5.arcgis.com/JIM0C93ugEcJ7iyY/arcgis/rest/services/ozs_shape_24_corrected/FeatureServer/0/query';
+const PAGE_SIZE = 2000;
+
+const CATEGORY = {
+  'OZ eligible':              { color: '#16803c', label: 'OZ Eligible',             border: '#14532d', cls: 'eligible' },
+  'OZ ineligible':            { color: '#3b82f6', label: 'OZ Ineligible',           border: '#1d4ed8', cls: 'ineligible' },
+  'insufficient information': { color: '#f59e0b', label: 'Insufficient Information', border: '#92400e', cls: 'insuff' },
+  ' ':                        { color: '#f59e0b', label: 'Insufficient Information', border: '#92400e', cls: 'insuff' },
+};
+const DEFAULT = { color: '#d1d5db', label: 'Unknown', border: '#9ca3af', cls: '' };
+
+// All 56 states/territories with full names
+const STATES = [
+  ['AK','Alaska'],['AL','Alabama'],['AR','Arkansas'],['AS','American Samoa'],
+  ['AZ','Arizona'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],
+  ['DC','District of Columbia'],['DE','Delaware'],['FL','Florida'],['GA','Georgia'],
+  ['GU','Guam'],['HI','Hawaii'],['IA','Iowa'],['ID','Idaho'],['IL','Illinois'],
+  ['IN','Indiana'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],
+  ['MA','Massachusetts'],['MD','Maryland'],['ME','Maine'],['MI','Michigan'],
+  ['MN','Minnesota'],['MO','Missouri'],['MP','Northern Mariana Islands'],
+  ['MS','Mississippi'],['MT','Montana'],['NC','North Carolina'],['ND','North Dakota'],
+  ['NE','Nebraska'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],
+  ['NV','Nevada'],['NY','New York'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],
+  ['PA','Pennsylvania'],['PR','Puerto Rico'],['RI','Rhode Island'],['SC','South Carolina'],
+  ['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VA','Virginia'],
+  ['VI','U.S. Virgin Islands'],['VT','Vermont'],['WA','Washington'],['WI','Wisconsin'],
+  ['WV','West Virginia'],['WY','Wyoming'],
+];
+
+// ── Category visibility toggles ───────────────────────────────────────────────
+const catVisible = { 'OZ eligible': true, 'OZ ineligible': true, 'insufficient information': true, ' ': true };
+const catKeys = ['OZ eligible', 'OZ ineligible', 'insufficient information'];
+
+function buildCatFilters() {
+  const wrap = document.getElementById('cat-filters');
+  catKeys.forEach(key => {
+    const cfg = CATEGORY[key];
+    const pill = document.createElement('button');
+    pill.className = 'cat-pill';
+    pill.textContent = cfg.label;
+    pill.style.background = cfg.color;
+    pill.style.color = '#fff';
+    pill.style.borderColor = cfg.border;
+    pill.dataset.cat = key;
+    pill.addEventListener('click', () => {
+      catVisible[key] = !catVisible[key];
+      catVisible[' '] = catVisible['insufficient information'];
+      pill.classList.toggle('off', !catVisible[key]);
+      if (currentLayer) currentLayer.setStyle(styleFeature);
+    });
+    wrap.appendChild(pill);
+  });
+}
+
+// ── Populate state dropdown ───────────────────────────────────────────────────
+function buildStateDropdown() {
+  const sel = document.getElementById('state-select');
+  STATES.forEach(([code, name]) => {
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = `${name} (${code})`;
+    sel.appendChild(opt);
+  });
+}
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const US_BOUNDS = L.latLngBounds(L.latLng(15.0, -180.0), L.latLng(72.0, -60.0));
+const map = L.map('map', {
+  center: [38.5, -96],
+  zoom: 4,
+  minZoom: 3,
+  maxZoom: 16,
+  maxBounds: US_BOUNDS,
+  maxBoundsViscosity: 0.8,
+});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a> | Source: ArcGIS Dashboard / ACS 2020–2024',
+  maxZoom: 19,
+}).addTo(map);
+
+let currentLayer = null;
+let currentData  = null;
+
+// ── Style function ────────────────────────────────────────────────────────────
+function styleFeature(feat) {
+  const raw = (feat.properties.oz_lgbl || '').trim();
+  const key = raw === '' ? ' ' : raw;
+  const cfg = CATEGORY[key] || DEFAULT;
+  const visible = catVisible[key] !== false;
+  return {
+    fillColor:   cfg.color,
+    fillOpacity: visible ? 0.72 : 0,
+    color:       visible ? cfg.border : 'transparent',
+    weight:      0.6,
+    opacity:     visible ? 0.8 : 0,
+  };
+}
+
+// ── Fetch all pages for a state ───────────────────────────────────────────────
+async function fetchState(stateCode) {
+  const loader = document.getElementById('loader');
+  const loaderText = document.getElementById('loader-text');
+  loader.classList.add('show');
+
+  const allFeatures = [];
+  let offset = 0;
+
+  try {
+    while (true) {
+      loaderText.textContent = `Loading tracts… (${allFeatures.length} so far)`;
+      const params = new URLSearchParams({
+        where:             `STUSPS='${stateCode}'`,
+        outFields:         'GEOID,oz_lgbl,NAME,NAMELSAD,pvrty_r,mfi,mfi_rat,unmpl_r,popultn,r_stat,STUSPS,STATE_N',
+        returnGeometry:    'true',
+        outSR:             '4326',
+        resultRecordCount: PAGE_SIZE,
+        resultOffset:      offset,
+        f:                 'geojson',
+      });
+      const resp = await fetch(`${SERVICE_URL}?${params}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const feats = data.features || [];
+      allFeatures.push(...feats);
+      if (feats.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+  } finally {
+    loader.classList.remove('show');
+  }
+  return { type: 'FeatureCollection', features: allFeatures };
+}
+
+// ── Render layer ──────────────────────────────────────────────────────────────
+function renderLayer(geojson, stateCode) {
+  if (currentLayer) map.removeLayer(currentLayer);
+  document.getElementById('info').classList.remove('show');
+
+  currentLayer = L.geoJSON(geojson, {
+    style: styleFeature,
+    onEachFeature: (feat, layer) => {
+      layer.on({
+        mouseover(e) {
+          e.target.setStyle({ weight: 2.2, color: '#7b4f12', fillOpacity: 0.92 });
+          e.target.bringToFront();
+          showInfo(feat.properties);
+        },
+        mouseout(e) {
+          currentLayer.resetStyle(e.target);
+          document.getElementById('info').classList.remove('show');
+        },
+        click(e) { showPopup(feat.properties, e.latlng); },
+      });
+    },
+  }).addTo(map);
+
+  if (currentLayer.getBounds().isValid()) {
+    map.fitBounds(currentLayer.getBounds(), { padding: [10, 10] });
+  }
+
+  // Update stats
+  updateStats(geojson.features, stateCode);
+}
+
+// ── Stats panel ───────────────────────────────────────────────────────────────
+function updateStats(features, stateCode) {
+  const counts = { 'OZ eligible': 0, 'OZ ineligible': 0, insuff: 0 };
+  features.forEach(f => {
+    const v = (f.properties.oz_lgbl || '').trim();
+    if (v === 'OZ eligible')            counts['OZ eligible']++;
+    else if (v === 'OZ ineligible')     counts['OZ ineligible']++;
+    else                                counts.insuff++;
+  });
+  const total = features.length;
+  const pct = total > 0 ? (counts['OZ eligible'] / total * 100).toFixed(1) : '0';
+
+  document.getElementById('s-eligible').textContent   = counts['OZ eligible'].toLocaleString();
+  document.getElementById('s-ineligible').textContent = counts['OZ ineligible'].toLocaleString();
+  document.getElementById('s-insuff').textContent     = counts.insuff.toLocaleString();
+  document.getElementById('s-total').textContent      = total.toLocaleString();
+  document.getElementById('s-pct').textContent        = pct + '%';
+
+  const stateName = STATES.find(s => s[0] === stateCode)?.[1] || stateCode;
+  document.getElementById('stats-title').textContent = stateName;
+  document.getElementById('stats').classList.add('show');
+
+  // Legend counts
+  document.getElementById('cnt-eligible').textContent   = counts['OZ eligible'].toLocaleString();
+  document.getElementById('cnt-ineligible').textContent = counts['OZ ineligible'].toLocaleString();
+  document.getElementById('cnt-insuff').textContent     = counts.insuff.toLocaleString();
+}
+
+// ── Hover info panel ──────────────────────────────────────────────────────────
+function showInfo(p) {
+  const raw = (p.oz_lgbl || '').trim();
+  const key = raw === '' ? ' ' : raw;
+  const cfg = CATEGORY[key] || DEFAULT;
+
+  document.getElementById('info-title').textContent = p.NAMELSAD || `Tract ${p.NAME}`;
+  document.getElementById('info-body').innerHTML = [
+    ['Status',      `<span class="ival ${cfg.cls}">${cfg.label}</span>`],
+    ['GEOID',       p.GEOID || '—'],
+    ['Poverty Rate',  p.pvrty_r || '—'],
+    ['Median Income', p.mfi     || '—'],
+    ['MFI Ratio',     p.mfi_rat || '—'],
+    ['Unemployment',  p.unmpl_r || '—'],
+    ['Population',    p.popultn || '—'],
+    ['Type',          p.r_stat  || '—'],
+  ].map(([lbl, val]) =>
+    `<div class="irow"><span class="ilbl">${lbl}</span><span class="ival">${val}</span></div>`
+  ).join('');
+
+  document.getElementById('info').classList.add('show');
+}
+
+// ── Click popup ───────────────────────────────────────────────────────────────
+function showPopup(p, latlng) {
+  const raw = (p.oz_lgbl || '').trim();
+  const key = raw === '' ? ' ' : raw;
+  const cfg = CATEGORY[key] || DEFAULT;
+
+  const badgeStyle = `background:${cfg.color};color:#fff;`;
+  const rows = [
+    ['GEOID',        p.GEOID    || '—'],
+    ['Poverty Rate', p.pvrty_r  || '—'],
+    ['Median Income',p.mfi      || '—'],
+    ['MFI Ratio',    p.mfi_rat  || '—'],
+    ['Unemployment', p.unmpl_r  || '—'],
+    ['Population',   p.popultn  || '—'],
+    ['Urban/Rural',  p.r_stat   || '—'],
+    ['State',        p.STATE_N  || p.STUSPS || '—'],
+  ].map(([l, v]) => `<span class="pu-lbl">${l}</span><span class="pu-val">${v}</span>`).join('');
+
+  L.popup({ maxWidth: 280 })
+    .setLatLng(latlng)
+    .setContent(`
+      <div class="pu-title">${p.NAMELSAD || 'Census Tract ' + p.NAME}</div>
+      <div><span class="pu-badge" style="${badgeStyle}">${cfg.label}</span></div>
+      <div class="pu-grid">${rows}</div>
+    `)
+    .openOn(map);
+}
+
+// ── State selector handler ────────────────────────────────────────────────────
+document.getElementById('state-select').addEventListener('change', async function () {
+  const code = this.value;
+  if (!code) return;
+  try {
+    currentData = await fetchState(code);
+    renderLayer(currentData, code);
+  } catch (err) {
+    alert('Error loading data: ' + err.message);
+    document.getElementById('loader').classList.remove('show');
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildCatFilters();
+buildStateDropdown();
+</script>
+</body>
+</html>
